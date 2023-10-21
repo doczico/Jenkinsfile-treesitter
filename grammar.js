@@ -1,10 +1,35 @@
+function prefixGroovyRules(rules) {
+  const prefixed = {};
+  for (const rule in rules) {
+    prefixed['groovy_' + rule] = rules[rule];
+  }
+  return prefixed;
+}
+const groovyGrammar = require('tree-sitter-groovy');
+const prefixedGroovyRules = prefixGroovyRules(groovyGrammar.rules);
+
 module.exports = grammar({
   name: 'Jenkinsfile',
+  extras: ($) => [$.line_comment, $.block_comment, /\s/],
+  // Include the groovy grammar
+  externals: $ => [
+     $._groovy_command,
+     $._groovy_block
+   ],
 
   rules: {
     // Entry point
-    source_file: $ => $.pipeline_block,
-
+    source_file: $ => repeat(choice(
+    $.pipeline_block,
+    $.script_block,
+    )),
+    prefixedGroovyRules, 
+    script_block: $ => seq(
+      'script',
+      '{',
+      $.groovy_code,
+      '}'
+    ),
     pipeline_block: $ => seq(
       'pipeline',
       '{',
@@ -210,8 +235,9 @@ module.exports = grammar({
       $.jenkinsfile_docker_config,
       $.string,  // For capturing string literals
       $.number,  // For capturing numbers
-      $.identifier  // For capturing variable names or other identifiers
+      $.identifier,  // For capturing variable names or other identifiers
       // ... any other general Groovy expressions or constructs
+      $._groovy_expression
     ),
     options_section: $ => seq(
       'options',
@@ -532,6 +558,10 @@ parameter_definition: $ => seq(
     
     string: $ => /"[^"]*"/,
     number: $ => /\d+(\.\d+)?/,
-    identifier: $ => /[a-zA-Z_][a-zA-Z0-9_]*/,
+    identifier: $ => /[a-zA-Z_][a-zA-Z0-9_]*/, 
+    comment: ($) => choice($.line_comment, $.block_comment),
+    line_comment: ($) => token(prec(0, seq("//", /[^\n]*/))),
+    block_comment: ($) =>
+      token(prec(0, seq("/*", /[^*]*\*+([^/*][^*]*\*+)*/, "/"))),
   }
 });
